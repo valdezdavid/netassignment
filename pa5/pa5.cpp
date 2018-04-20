@@ -8,6 +8,8 @@
 /////////////
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/time.h>
+#include <openssl/sha.h>
 
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -26,6 +28,7 @@
 #include <vector>
 // #include "main.h"
 #include "Event.h"
+
 
 
 /*
@@ -68,43 +71,82 @@ using namespace std;
  
 //bool checkCommandLine(vector<string>&); the one from pa4
 bool verifyCommandLineStartUp(vector<string>&);
+void GetObjID(
+            char node_id[40],
+            char obj_category[8],
+            char returned_obj_id[SHA_DIGEST_LENGTH],
+            char hexstring_of_obj_id[(SHA_DIGEST_LENGTH<<1)+1]);
 
 //Command for command line
-// /void handleCommand(string command);
-typedef struct {
-        string host_;
-        int control_port_;
-        int app_port_;
-        int location_;
-        string root_;
-        string pid_;
-        string log_;
-} ConfigInformation;
-typedef struct{
-        int ttl_;
-        int num_startup_neighbors_;
-        int msg_life_time_;
-        int keep_alive_timeout_;
-        int check_timeout_;
-        int discovery_timeout_;
-        int discovery_retry_interval_;
-} Params;
-typedef struct{
-        int famous_retry_interval_;
-        int count_;
-        vector<string> nodes_;
-} Famous;
+// // /void handleCommand(string command);
+// typedef struct {
+//         string host_;
+//         int control_port_;
+//         int app_port_;
+//         int location_;
+//         string root_;
+//         string pid_;
+//         string log_;
+// } ConfigInformation;
+// typedef struct{
+//         int ttl_;
+//         int num_startup_neighbors_;
+//         int msg_life_time_;
+//         int keep_alive_timeout_;
+//         int check_timeout_;
+//         int discovery_timeout_;
+//         int discovery_retry_interval_;
+// } Params;
+// typedef struct{
+//         int famous_retry_interval_;
+//         int count_;
+//         vector<string> nodes_;
+// } Famous;
 
-vector<pthread_t> threads;
+
+//GLOBAL VARIABLES
+
+vector<pthread_t> threads_ = NULL;
 
 //Event queue
+EventQueue eq_ = NULL;
 
 
 //void parseConfigPart(ConfigInformation&);
-void parseConfigFile(string,ConfigInformation&, Params&, Famous&);
-void parseConfigSection(ifstream&, ConfigInformation&); 
-void parseParamsSection(ifstream&,Params&);
-void parseFamousSection(ifstream&,Famous&);
+//void parseConfigFile(string,ConfigInformation&, Params&, Famous&);
+void parseConfigFile(string, NodeLogic&);
+void parseConfigSection(ifstream&, NodeLogic&); 
+void parseParamsSection(ifstream&,NodeLogic&);
+void parseFamousSection(ifstream&,NodeLogic&);
+bool checkIfFamous(NodeLogic& nl);
+void GetObjID(
+            char node_id[40];
+            char obj_category[8],
+            char returned_obj_id[SHA_DIGEST_LENGTH],
+            char hexstring_of_obj_id[(SHA_DIGEST_LENGTH<<1)+1])
+{ 
+  static unsigned long seq_no=0L;
+  static struct timeval node_start_time;
+  static char hexchar[]="0123456789abcdef";
+  char unique_str[128];
+
+  if (seq_no++ == 0L) {
+      gettimeofday(&node_start_time, NULL);
+  }
+  snprintf(unique_str, sizeof(unique_str), "%s_%d_%s_%1ld",
+          node_id, (int)(node_start_time.tv_sec), obj_category, (long)seq_no);
+  SHA1((unsigned char *)unique_str, strlen(unique_str), (unsigned char *)returned_obj_id);
+  for (int i=0; i < SHA_DIGEST_LENGTH; i++) {
+      unsigned char ch=(unsigned char)returned_obj_id[i];
+      int hi_nibble=(int)(unsigned int)((ch>>4)&0x0f);
+      int lo_nibble=(int)(unsigned int)(ch&0x0f);
+
+      hexstring_of_obj_id[i<<1] = hexchar[hi_nibble];
+      hexstring_of_obj_id[(i<<1)+1] = hexchar[lo_nibble];
+  }
+  hexstring_of_obj_id[SHA_DIGEST_LENGTH<<1] = '\0';
+
+}
 void *handle_connection(void *arg)
 {
   int bytes_received;
@@ -175,7 +217,7 @@ void *console(void *arg)
 
   return NULL;
 }
-
+//TODO
 void *eventHandler(void *arg)
 {
   //Will handle all of the events
@@ -183,11 +225,31 @@ void *eventHandler(void *arg)
   //THe event queue will be a global variable
   // while()
   /*  
-    will stay in an infinite loop waiting for work(to get added to the event queue)
+    will stay in an infinite loop waiting for work(to get added to the event queue
+    
+  
+  while(eq_.size() != 0){
+    //Handle the event
+  }
+  return NULL;
+  */
+
+}
+//TODO
+void *timerThread(void *arg)
+{
+  /*
+    -need to wake up every 0.25 seconds 
+    to decrement counters
+    -manages a list of timeout objects (counter + event) (this could be a separate struct)
+
+    - no work queue for this thread 
+
+    - if a counter reaches 0, remove the counter and add event to the event queue (fire the event)
+
+
 
   */
-  
-
 }
 
 
@@ -202,6 +264,10 @@ int main(int argc, char *argv[])
   struct addrinfo hints;
   struct addrinfo* res;
   pthread_t console_thread_id;
+
+  //Create an instance of the event queue
+  EventQueue eq = EventQueue();
+  eq_ = eq;
 
   
     
@@ -227,9 +293,9 @@ int main(int argc, char *argv[])
   string filename = argv[1];
   cout << "Printing file name" << filename << endl;
   //Create the config struct that will hold all the information from the config file 
-  ConfigInformation configInfo;
-  Params params;
-  Famous famous;
+  // ConfigInformation configInfo;
+  // Params params;
+  // Famous famous;
  
  // parseConfigFile(filename,configInfo, params, famous);
 
@@ -263,20 +329,36 @@ int main(int argc, char *argv[])
   }
   //This thread creates the console thread
   pthread_create(&console_thread_id, NULL, console, NULL);
-
+//TODO
   //This thread creates the event thread
-  //pthread_create(&event_thread_id,NULL,eventHandler,NULL);
+  pthread_create(&event_thread_id,NULL,eventHandler,NULL);
+  //TODO
+  //Need to create a timer thread 
+  // pthread_create(&timer_thread_id, NULL, timerThread,NULL);
 
   for (;;) {
       struct sockaddr_in cli_addr;
       unsigned int clilen = sizeof(cli_addr);
       int newsockfd;
       pthread_t thread_id;
+
+      //create new node logi
+      NodeLogic nodeLogic = NodeLogic();
+
+      //Parse config file 
+      parseConfigFile(nodeLogic);
+
+      //Figure out if youre a famous or regular node
+      bool famous = checkIfFamous(nodeLogic);
       //creating new socket 
       newsockfd = accept(master_socket_fd, (struct sockaddr *)(&cli_addr), &clilen);
       pthread_create(&thread_id, NULL, handle_connection, (void*)(unsigned long)newsockfd);
       pthread_create(&thread_id,NULL, write_socket,(void*)(unsigned long)newsockfd);
       threads.emplace_back(thread_id);
+
+      //TODO
+      //Create add neighbor event
+        //Include newly created socket in event
   }
   close(master_socket_fd);
 
@@ -302,6 +384,34 @@ int main(int argc, char *argv[])
 //   }
 
 // }
+
+bool checkIfFamous(NodeLogic& nl){
+  bool famous = false;
+
+  //Depends on host and control port
+  string host = nl.getHost();
+  int controlPort = nl.getControlPort();
+  string controlPortString = std::to_string(controlPort);
+
+  string nodeId = host;
+  nodeId += "_";
+  nodeId += controlPortString;
+
+  //Set the node id
+  nl.setNodeId(nodeId);
+
+  //Get the nodes from nl
+  vector<string> nodes = nl.getNodes();
+  for(int i = 0; i < nodes.size();i++){
+    if(nodeId == nodes[i]){
+      famous = true;
+    }
+  }
+
+  return famous;
+
+}
+
 bool verifyCommandLineStartUp(vector<string>& v){
   bool okay = false;
   // int args = v.size();
@@ -318,7 +428,7 @@ bool verifyCommandLineStartUp(vector<string>& v){
 
 
 // void parseConfigFile(string filename, int& control_port, int&app)
-void parseConfigFile(string filename, ConfigInformation& configInfo, Params& params, Famous& famous){
+void parseConfigFile(string filename, NodeLogic& nl){
 
 
   string type = "";
@@ -334,14 +444,14 @@ void parseConfigFile(string filename, ConfigInformation& configInfo, Params& par
       //This represents the start of the config section
       if(line == "[config]"){
         // parseConfigPart(myfile,port, logFile, pidFile,root,mimeFile);    
-        parseConfigSection(myfile,configInfo);   
+        parseConfigSection(myfile,nl);   
       }
       else if(line == "[params]"){
         // parseTypeSection(myfile, bVal, pVal, maxrVal, dialVal);
         // printValues(filename, bVal, pVal, maxrVal, dialVal, port,logFile,pidFile,root,
         // mimeFile);
         // return;
-        parseParamsSection(myfile, params);
+        parseParamsSection(myfile, nl);
 
       }
       else if(line == "[famous]"){
@@ -349,7 +459,7 @@ void parseConfigFile(string filename, ConfigInformation& configInfo, Params& par
         // printValues(filename, bVal, pVal, maxrVal, dialVal, port,logFile,pidFile,root,
         // mimeFile);
         // return;
-        parseFamousSection(myfile, famous);
+        parseFamousSection(myfile, nl);
       }
 
 
@@ -359,7 +469,7 @@ void parseConfigFile(string filename, ConfigInformation& configInfo, Params& par
 
 }
 
-void parseConfigSection(ifstream& myfile, ConfigInformation& config){
+void parseConfigSection(ifstream& myfile, NodeLogic& config){
   string line = "";
   //Read in for a total of 7 times
   for(int i = 0; i < 7;i++){
@@ -377,33 +487,33 @@ void parseConfigSection(ifstream& myfile, ConfigInformation& config){
       
       cout << "AFTER VALUE IN PARSE" << endl;
       if(key == "host"){
-        config.host_ = valueString;
+        config.setHost(valueString);
       }
       else if(key == "control_port"){
         int value = std::stoi(valueString);
-        config.control_port_ = value;
+        config.setControlPort(value);
       }
       else if(key == "app_port"){
         int value = std::stoi(valueString);
-        config.app_port_ = value;
+        config.setAppPort(value);
       }
       else if(key == "location"){
         int value = std::stoi(valueString);
-        config.location_ = value;
+        config.setLocation(value);
       }
       else if(key == "root"){
-        config.root_ = valueString;
+        config.setRoot(valueString);
       }
       else if(key == "pid"){
-        config.pid_ = valueString;
+        config.setPid(valueString);
       }
       else if(key == "log"){
-        config.log_ = valueString;
+        config.setLog(valueString);
       }
     }
   }
 }
-void parseParamsSection(ifstream& myfile, Params& params){
+void parseParamsSection(ifstream& myfile, NodeLogic& params){
   string line ="";
   getline(myfile,line);
   for(int i = 0;i < 7;i++){
@@ -416,31 +526,31 @@ void parseParamsSection(ifstream& myfile, Params& params){
       cout << "AFTER VALUE IN PARSE parms" << endl;
       cout << "params 1" << endl;
       if(key == "ttl"){
-        params.ttl_ = value;
+        params.setTtl(value)
       }
       else if(key == "num_startup_neighbors"){
-        params.num_startup_neighbors_ = value;
+        params.setNumStartupNeighbors(value)
       }
       else if(key == "msg_life_time"){
-        params.msg_life_time_ = value;
+        params.setMsgLifeTime(value)
       }
       else if(key == "keep_alive_timeout"){
-        params.keep_alive_timeout_ = value;
+        params.setKeepAliveTimeout(value)
       }
       else if(key == "check_timeout"){
-        params.check_timeout_ = value;
+        params.setCheckTimeout(value)
       }
       else if(key == "discovery_timeout"){
-        params.discovery_timeout_ = value;
+        params.setDiscoveryTimeout(value)
       }
       else if(key == "discovery_retry_interval"){
-        params.discovery_retry_interval_ = value;
+        params.setDiscoveryRetryInterval(value)
       }
     }
   }
   cout << "END of params" << endl;
 }
-void parseFamousSection(ifstream& myfile, Famous& famous){
+void parseFamousSection(ifstream& myfile, NodeLogic& famous){
   string line="";
   cout << "famous 1" << endl;
   int count = -1;
@@ -452,13 +562,13 @@ void parseFamousSection(ifstream& myfile, Famous& famous){
       string key = line.substr(0,equalSign);
       if(key == "famous_retry_interval"){
         string number = line.substr(line.find("=") +1);
-        famous.famous_retry_interval_ = std::stoi(number);
+        famous.setFamousRetryInterval(std::stoi(number));
         cout << "famous 1" << endl;
       }
       else if(key == "count"){
         string countString = line.substr(line.find("=")+1);
-        famous.count_ = std::stoi(countString);
-        count = famous.count_;
+        famous.setCount(std::stoi(countString));
+        count = famous.getCount();
         cout << "famous 2" << endl;
       }
 
@@ -485,7 +595,7 @@ void parseFamousSection(ifstream& myfile, Famous& famous){
   cout << "END OF FAMOUS" << endl;
   //Set the vector to famous' vector nodes
   //Will need to 
-  famous.nodes_ = newVector;
+  famous.setNodes(newVector);
 }
 
 // bool checkCommandLine(vector<string>& v){

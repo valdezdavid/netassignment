@@ -1,12 +1,12 @@
-#include "EventQueue.h"
+#include "TimerQueue.h"
 //#include "util.h"
 //#include <sstream>
 using namespace std;
 
-EventQueue::EventQueue(){}
+TimerQueue::TimerQueue(){}
 
 
-void EventQueue::addItem(Event item) {
+void TimerQueue::addItem(Timer item) {
     // grab a lock on the queue mutex and add an item
     {
     	std::lock_guard<std::mutex> guard(queueMutex_);
@@ -18,7 +18,7 @@ void EventQueue::addItem(Event item) {
     	queueCV_.notify_one();
 }
 
-Event EventQueue::getItem() {
+Timer TimerQueue::getItem() {
     // the queue might be empty, so we need to wait until it has an item in it
     //
     // we cannot hold a lock on the queue while we're waiting, otherwise
@@ -34,7 +34,7 @@ Event EventQueue::getItem() {
     queueCV_.wait(lk, []{return not queue_.empty();});
 
     // grab the item at the front of the queue, then pop it off
-    const Event item = queue_.front();
+    const Timer item = queue_.front();
     queue_.pop();
 
     return item;

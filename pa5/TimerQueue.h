@@ -1,24 +1,24 @@
-#ifndef EVENTQUEUE_H
-#define EVENTQUEUE_H
+#ifndef TIMERQUEUE_H
+#define TIMERQUEUE_H
 
 #include <queue>
 #include <mutex>
 #include <condition_variable>
-#include <Event.h>
+#include <Timer.h>
 
 
 
 
-class EventQueue {
+class TimerQueue {
 public:
 
-	EventQueue();
-	void addItem(Event item);
+	TimerQueue();
+	void addItem(Timer item);
 
-	Event getItem();
+	Timer getItem();
 
 private:
-	std::queue<Event> queue_;
+	std::queue<Timer> queue_;
   	std::mutex queueMutex_;
   	std::condition_variable queueCV_;
 
